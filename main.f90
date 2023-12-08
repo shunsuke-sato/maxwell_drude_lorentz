@@ -12,7 +12,7 @@ module global_variables
 
 ! spatial grid
   real(8) :: left_boundary, right_boundary, matter_thickness, dx
-  real(8) :: nx_l, nx_r, mx
+  integer :: nx_l, nx_r, mx
   real(8),allocatable :: xx_cor(:)
 
 ! time grid
@@ -32,8 +32,8 @@ module global_variables
   real(8),allocatable :: vt_drude(:,:),vt_drude_old(:,:),vt_drude_new(:,:)
 
 ! Lorentz parameters
-  real(8) :: mass_lorentz(num_drude), gamma_lorentz(num_drude), density_lorentz(num_drude)
-  real(8) :: kconst_lorentz(num_drude)
+  real(8) :: mass_lorentz(num_lorentz), gamma_lorentz(num_lorentz), density_lorentz(num_lorentz)
+  real(8) :: kconst_lorentz(num_lorentz)
   real(8),allocatable :: xt_lorentz(:,:),vt_lorentz(:,:)
   real(8),allocatable :: xt_lorentz_old(:,:),vt_lorentz_old(:,:)
   real(8),allocatable :: xt_lorentz_new(:,:),vt_lorentz_new(:,:)
@@ -69,19 +69,19 @@ subroutine set_model_parameters
 
 ! material parameters
   mass_drude(1) = 1d0
-  gamma_drude(1) = 1d0
+  gamma_drude(1) = (0.5d0/ev)
   density_drude(1) = 0d0
 
   mass_lorentz(1) = 1d0
-  gamma_lorentz(1) = 1d0
+  gamma_lorentz(1) = (0.5d0/ev)
   density_lorentz(1) = 0d0
-  kconst_lorentz(1) = 1d0
+  kconst_lorentz(1) = (5d0/ev)**2
 
 
 ! spatial grid
   left_boundary = -10d-6/a_B
   right_boundary = 10d-6/a_B
-  matter_thickness = 100d-9/a_B
+  matter_thickness = 200d-9/a_B
   dx = 10d-9/a_B
 
   mx = aint(matter_thickness/dx)+1
@@ -129,10 +129,11 @@ subroutine set_initial_laser
   integer :: ix
 
 
+  E0 = 1d0
   velocity = clight/sqrt(eps0)
 
   omega_ev = 1.55d0
-  pulse_width_fs = 20d0
+  pulse_width_fs = 30d0
 
   omega = omega_ev/ev
   pulse_width = pulse_width_fs/fs
@@ -144,14 +145,14 @@ subroutine set_initial_laser
     xx = xx_cor(ix)
     tt = -xx/velocity
     
-    ss = tt - 0.5d0*tpulse_width
-    if(abs(ss) < 0.5d0*tpulse_width)then
-      Elec_x(ix) = E0*cos(omega*ss)*cos(0.5d0*pi*ss/tpulse)**4
+    ss = tt - 0.5d0*pulse_width
+    if(abs(ss) < 0.5d0*pulse_width)then
+      Elec_x(ix) = E0*cos(omega*ss)*cos(pi*ss/pulse_width)**4
     end if
 
-    ss = tt - 0.5d0*tpulse_width + dt
-    if(abs(ss) < 0.5d0*tpulse_width)then
-      Elec_x_old(ix) = E0*cos(omega*ss)*cos(0.5d0*pi*ss/tpulse)**4
+    ss = tt - 0.5d0*pulse_width - dt
+    if(abs(ss) < 0.5d0*pulse_width)then
+      Elec_x_old(ix) = E0*cos(omega*ss)*cos(pi*ss/pulse_width)**4
     end if
     
 
@@ -173,7 +174,7 @@ subroutine time_propergation
 
     call dt_propagation
 
-    if(mod(it, nt/200) == 0) call output_field(it)
+    if(mod(it, 200) == 0) call output_field(it)
 
   end do
 
@@ -187,8 +188,8 @@ subroutine dt_propagation
   call calc_acc
   call dt_maxwell
 
-  Elec_x_old = Eelec_x
-  Eelec_x = Elec_x_new
+  Elec_x_old = Elec_x
+  Elec_x = Elec_x_new
 
   vt_drude_old = vt_drude
   vt_drude = vt_drude_new
@@ -210,10 +211,10 @@ subroutine dt_newton
 ! Drude model
   do ix = 1, mx
     do imodel = 1, num_drude
-      acc_t = -gamma_drude(imode)*vt_drude(imodel, ix) &
-             + Eelec_x(ix)/mass_drude(imode)
+      acc_t = -gamma_drude(imodel)*vt_drude(imodel, ix) &
+             + Elec_x(ix)/mass_drude(imodel)
 
-      vt_drude_new(imode, ix) = vt_drude_old(imode, ix) + 2d0*dt*acc_t
+      vt_drude_new(imodel, ix) = vt_drude_old(imodel, ix) + 2d0*dt*acc_t
 
     end do
   end do
@@ -222,16 +223,19 @@ subroutine dt_newton
 ! Lorentz model
   do ix = 1, mx
     do imodel = 1, num_drude
-      acc_t = -gamma_lorentz(imode)*vt_lorentz(imodel, ix) &
-              -(kconst_lorentz(imode)/mass_lorentz(imode)))*xt_lorentz(imodel, ix) &
-             + Eelec_x(ix)/mass_lorentz(imode)
+      acc_t = -gamma_lorentz(imodel)*vt_lorentz(imodel, ix) &
+              -(kconst_lorentz(imodel)/mass_lorentz(imodel))*xt_lorentz(imodel, ix) &
+             + Elec_x(ix)/mass_lorentz(imodel)
 
-      vt_lorentz_new(imode, ix) = vt_lorentz_old(imode, ix) + 2d0*dt*acc_t
-      xt_lorentz_new(imode, ix) = 2d0*xt_lorentz(imode, ix) - xt_lorentz_old(imode, ix) &
+      vt_lorentz_new(imodel, ix) = vt_lorentz_old(imodel, ix) + 2d0*dt*acc_t
+      xt_lorentz_new(imodel, ix) = 2d0*xt_lorentz(imodel, ix) - xt_lorentz_old(imodel, ix) &
                                  + acc_t*dt**2
 
     end do
   end do
+
+  write(*,*)vt_lorentz_new(1,1),vt_drude_new(1,1)
+
 
 end subroutine dt_newton
 !------------------------------------------------------------------------
@@ -248,13 +252,13 @@ subroutine calc_acc
 ! Drude model
     do imodel = 1, num_drude
       acc_t = 0.5d0*(vt_drude_new(imodel,ix)-vt_drude_old(imodel,ix))/dt
-      acc_dns_x(ix) = acc_dns_x(ix) + density_drude(num_drude)*acc_t
+      acc_dns_x(ix) = acc_dns_x(ix) + density_drude(imodel)*acc_t
     end do
 
 ! Lorentz model
     do imodel = 1, num_lorentz
       acc_t = 0.5d0*(vt_lorentz_new(imodel,ix)-vt_lorentz_old(imodel,ix))/dt
-      acc_dns_x(ix) = acc_dns_x(ix) + density_lorentz(num_drude)*acc_t
+      acc_dns_x(ix) = acc_dns_x(ix) + density_lorentz(imodel)*acc_t
     end do
 
   end do
@@ -270,19 +274,19 @@ subroutine dt_maxwell
 
 ! calc laplacian
   ix = nx_l
-  Lap_Elec_x(ix) = (Elec_x(ix+1)-2d0*Elec_x(ix+1))/dx**2
+  Lap_Elec_x(ix) = (Elec_x(ix+1)-2d0*Elec_x(ix))/dx**2
   do ix = nx_l+1, nx_r-1
-    Lap_Elec_x(ix) = (Elec_x(ix+1)-2d0*Elec_x(ix+1)+Elec_x(ix-1))/dx**2
+    Lap_Elec_x(ix) = (Elec_x(ix+1)-2d0*Elec_x(ix)+Elec_x(ix-1))/dx**2
   end do
   ix = nx_r
-  Lap_Elec_x(ix) = (-2d0*Elec_x(ix+1)+Elec_x(ix-1))/dx**2
+  Lap_Elec_x(ix) = (-2d0*Elec_x(ix)+Elec_x(ix-1))/dx**2
 
   velocity_c = clight/sqrt(eps0)
 
-  Eelec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
+  Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
 
 
-  Elec_x_new(1:mx) = -4d0*pi/clight**2*dt**2*acc_dns_x(1:mx)
+  Elec_x_new(1:mx) = Elec_x_new(1:mx) -4d0*pi/clight**2*dt**2*acc_dns_x(1:mx)
   
 
 
@@ -293,14 +297,15 @@ subroutine output_field(it)
   implicit none
   integer,intent(in) :: it
   character(256) :: cit, cfilename
+  integer :: ix
 
   write(cit, "(I9.9)")it
-  cfilename = "Efields_x_"//trim(cit)
+  cfilename = "Efields_x_"//trim(cit)//".out"
 
   open(20,file=cfilename)
   
   do ix = nx_l, nx_r
-    write(20,"(99e26.16e3)")xx_cor(ix), Elec_x(ix)
+    write(20,"(99e26.16e3)")xx_cor(ix), Elec_x_old(ix)
   end do
 
   close(20)
