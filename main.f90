@@ -1,5 +1,6 @@
 module global_variables
   implicit none
+  complex(8),parameter :: zi = (0d0, 1d0)
   real(8),parameter :: pi = 4d0*atan(1d0)
   real(8),parameter :: a_B = 0.529177210903d-10
   real(8),parameter :: ev = 27.2114d0
@@ -48,7 +49,7 @@ program main
 
 
   call set_model_parameters
-
+  call check_dielectric_function
   call time_propergation
 
 
@@ -70,21 +71,22 @@ subroutine set_model_parameters
 ! material parameters
   mass_drude(1) = 1d0
   gamma_drude(1) = (0.5d0/ev)
-  density_drude(1) = 0d0
+  density_drude(1) = 0d0*1d-3
 
   mass_lorentz(1) = 1d0
-  gamma_lorentz(1) = (0.5d0/ev)
-  density_lorentz(1) = 0d0
-  kconst_lorentz(1) = (5d0/ev)**2
+  gamma_lorentz(1) = (0.2d0/ev)
+  density_lorentz(1) = 2d-5
+  kconst_lorentz(1) = (1.6d0/ev)**2
 
 
 ! spatial grid
   left_boundary = -10d-6/a_B
   right_boundary = 10d-6/a_B
-  matter_thickness = 200d-9/a_B
-  dx = 10d-9/a_B
+  matter_thickness = 100d-9/a_B
+  dx = 5d-9/a_B
 
   mx = aint(matter_thickness/dx)+1
+  write(*,*)mx
   dx = matter_thickness/mx
 
   nx_l = -aint( abs(left_boundary)/dx ) -1
@@ -98,6 +100,7 @@ subroutine set_model_parameters
 
 
   allocate(Elec_x(nx_l:nx_r),Elec_x_old(nx_l:nx_r))
+  allocate(Elec_x_new(nx_l:nx_r))
   Elec_x = 0d0
   Elec_x_old = 0d0
 
@@ -170,13 +173,19 @@ subroutine time_propergation
 
 
   call set_initial_laser
-  do it = 0, nt
 
+  open(101,file="Et_vac.out")
+  write(101,"(A)")"# t (a.u.), E_front(t), E_rear(t)"
+
+  do it = 0, nt
+    write(101,"(999e26.16e3)")it*dt, Elec_x(0), Elec_x(mx+1)
     call dt_propagation
 
     if(mod(it, 200) == 0) call output_field(it)
 
+
   end do
+  close(101)
 
 end subroutine time_propergation
 !------------------------------------------------------------------------
@@ -234,7 +243,7 @@ subroutine dt_newton
     end do
   end do
 
-  write(*,*)vt_lorentz_new(1,1),vt_drude_new(1,1)
+!  write(*,*)vt_lorentz_new(1,1),vt_drude_new(1,1)
 
 
 end subroutine dt_newton
@@ -286,7 +295,9 @@ subroutine dt_maxwell
   Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
 
 
-  Elec_x_new(1:mx) = Elec_x_new(1:mx) -4d0*pi/clight**2*dt**2*acc_dns_x(1:mx)
+  write(*,*)nx_l, nx_r, mx
+  Elec_x_new(1:mx) = Elec_x_new(1:mx) &
+      -4d0*pi*(velocity_c/clight)**2*dt**2*acc_dns_x(1:mx)
   
 
 
@@ -314,6 +325,43 @@ subroutine output_field(it)
 
 end subroutine output_field
 !------------------------------------------------------------------------
+subroutine check_dielectric_function
+  use global_variables
+  implicit none
+  integer,parameter :: nw = 600
+  real(8),parameter :: wi = 0.1d0/ev, wf =30d0/ev, dw =(wf-wi)/nw
+  integer :: iw, imodel
+  real(8) :: ww, w0
+  complex(8) :: zeps
+
+
+  open(30,file="epsilon.out")
+  do iw = 0, nw
+    ww = wi + dw*iw
+
+    zeps = eps0
+
+! Drude
+    do imodel = 1, num_drude
+      zeps = zeps + (4d0*pi*zi/ww) &
+                  * (density_drude(imodel)/mass_drude(imodel)) &
+                  * 1d0/(gamma_drude(imodel)-zi*ww)
+    end do
+
+! Lorentz
+    do imodel = 1, num_lorentz
+      w0 = sqrt(kconst_lorentz(imodel)/mass_lorentz(imodel))
+      zeps = zeps + (4d0*pi*density_lorentz(imodel)/mass_lorentz(imodel)) &
+                  * 1d0/(w0**2-ww**2-zi*gamma_lorentz(imodel)*ww)
+    end do
+
+    write(30,"(99e26.16e3)")ww, zeps
+    
+  end do
+  close(30)
+
+
+end subroutine check_dielectric_function
 !------------------------------------------------------------------------
 !------------------------------------------------------------------------
 !------------------------------------------------------------------------
