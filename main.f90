@@ -9,7 +9,7 @@ module global_variables
 
 
   integer,parameter :: num_drude = 1
-  integer,parameter :: num_lorentz = 1
+  integer,parameter :: num_lorentz = 2
 
 ! spatial grid
   real(8) :: left_boundary, right_boundary, matter_thickness, dx
@@ -59,34 +59,47 @@ subroutine set_model_parameters
   use global_variables
   implicit none
   integer :: ix
+  real(8) :: omega_p
 
 ! time propagation
   Tprop = 40d0/fs
   dt = 0.1d0
   nt = aint(Tprop/dt)+1
+  write(*,*)"nt = ",nt
 
 ! base matter
   eps0 = 1d0
 
 ! material parameters
+  omega_p = 8.5d0/ev
   mass_drude(1) = 1d0
-  gamma_drude(1) = (0.5d0/ev)
-  density_drude(1) = 0d0*1d-3
+  gamma_drude(1) = 1d0/(14d0/0.024189d0)
+  density_drude(1) = omega_p**2*0.080d0
+  density_drude(1) = 0d0
 
   mass_lorentz(1) = 1d0
   gamma_lorentz(1) = (0.2d0/ev)
-  density_lorentz(1) = 2d-5
-  kconst_lorentz(1) = (1.6d0/ev)**2
+  density_lorentz(1) = 0.7d-3
+!  density_lorentz(1) = 0d0
+  kconst_lorentz(1) = (2.2d0/ev)**2
+
+
+  mass_lorentz(2) = 1d0
+  gamma_lorentz(2) = gamma_lorentz(1)
+  density_lorentz(2) = density_lorentz(1)*0.22d0
+!  density_lorentz(2) = 0d0
+  kconst_lorentz(2) = (2.47d0/ev)**2
+
 
 
 ! spatial grid
   left_boundary = -10d-6/a_B
   right_boundary = 10d-6/a_B
-  matter_thickness = 100d-9/a_B
-  dx = 5d-9/a_B
+  matter_thickness = 20d-9/a_B
+  dx = 1d-9/a_B
 
   mx = aint(matter_thickness/dx)+1
-  write(*,*)mx
+  write(*,*)'mx = ',mx
   dx = matter_thickness/mx
 
   nx_l = -aint( abs(left_boundary)/dx ) -1
@@ -111,11 +124,11 @@ subroutine set_model_parameters
   allocate(vt_drude(num_drude, mx),vt_drude_old(num_drude, mx))
   allocate(vt_drude_new(num_drude, mx))
   vt_drude = 0d0; vt_drude_old = 0d0; vt_drude_new = 0d0
-  allocate(xt_lorentz(num_drude, mx),xt_lorentz_old(num_drude, mx))
-  allocate(xt_lorentz_new(num_drude, mx))
+  allocate(xt_lorentz(num_lorentz, mx),xt_lorentz_old(num_lorentz, mx))
+  allocate(xt_lorentz_new(num_lorentz, mx))
   xt_lorentz = 0d0; xt_lorentz_old = 0d0; xt_lorentz_new = 0d0
-  allocate(vt_lorentz(num_drude, mx),vt_lorentz_old(num_drude, mx))
-  allocate(vt_lorentz_new(num_drude, mx))
+  allocate(vt_lorentz(num_lorentz, mx),vt_lorentz_old(num_lorentz, mx))
+  allocate(vt_lorentz_new(num_lorentz, mx))
   vt_lorentz = 0d0; vt_lorentz_old = 0d0; vt_lorentz_new = 0d0
 
 
@@ -136,7 +149,8 @@ subroutine set_initial_laser
   velocity = clight/sqrt(eps0)
 
   omega_ev = 1.55d0
-  pulse_width_fs = 30d0
+!  pulse_width_fs = 30d0
+  pulse_width_fs = 10d0
 
   omega = omega_ev/ev
   pulse_width = pulse_width_fs/fs
@@ -181,7 +195,7 @@ subroutine time_propergation
     write(101,"(999e26.16e3)")it*dt, Elec_x(0), Elec_x(mx+1)
     call dt_propagation
 
-    if(mod(it, 200) == 0) call output_field(it)
+!    if(mod(it, 200) == 0) call output_field(it)
 
 
   end do
@@ -231,7 +245,7 @@ subroutine dt_newton
 
 ! Lorentz model
   do ix = 1, mx
-    do imodel = 1, num_drude
+    do imodel = 1, num_lorentz
       acc_t = -gamma_lorentz(imodel)*vt_lorentz(imodel, ix) &
               -(kconst_lorentz(imodel)/mass_lorentz(imodel))*xt_lorentz(imodel, ix) &
              + Elec_x(ix)/mass_lorentz(imodel)
@@ -295,7 +309,7 @@ subroutine dt_maxwell
   Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
 
 
-  write(*,*)nx_l, nx_r, mx
+!  write(*,*)nx_l, nx_r, mx
   Elec_x_new(1:mx) = Elec_x_new(1:mx) &
       -4d0*pi*(velocity_c/clight)**2*dt**2*acc_dns_x(1:mx)
   
