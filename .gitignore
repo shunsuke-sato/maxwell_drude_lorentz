@@ -13,6 +13,7 @@
 # Executable files
 test
 tdhf
+ft
 
 # Libraries
 *.lib
