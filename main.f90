@@ -42,6 +42,12 @@ module global_variables
 ! Averaged value in film
   real(8) :: current_ave, Efield_ave, dEdt_ave
 
+! experimental data
+  integer,parameter :: nt_exp =  11135 !111370
+  real(8)  :: tt_exp(nt_exp)
+  real(8) :: E_exp_in(5,nt_exp)
+  real(8) :: E_exp(nt_exp)
+
 end module global_variables
 !------------------------------------------------------------------------
 program main
@@ -62,9 +68,10 @@ subroutine set_model_parameters
   integer :: ix
   real(8) :: omega_p, factor_vac
 
-  factor_vac = 1d0
+  factor_vac = 0d0
 ! time propagation
-  Tprop = 40d0/fs
+  Tprop = 60d0/fs
+!  dt = 0.05d0
   dt = 0.05d0
   nt = aint(Tprop/dt)+1
   write(*,*)"nt = ",nt
@@ -96,10 +103,11 @@ subroutine set_model_parameters
 
 
 ! spatial grid
-  left_boundary = -10d-6/a_B
-  right_boundary = 10d-6/a_B
+  left_boundary = -20d-6/a_B
+  right_boundary = 20d-6/a_B
   matter_thickness = 20d-9/a_B
-  dx = 1d-9/a_B
+!  dx = 1d-9/a_B
+  dx = 5d-10/a_B
 
   mx = aint(matter_thickness/dx)+1
   write(*,*)'mx = ',mx
@@ -183,20 +191,77 @@ subroutine set_initial_laser
 
 end subroutine set_initial_laser
 !------------------------------------------------------------------------
+subroutine set_initial_laser_exp
+  use global_variables
+  implicit none
+  real(8) :: xx, tt, velocity, ss, Et
+  integer :: ix
+
+  call read_exp_data
+
+  velocity = clight/sqrt(eps0)
+
+  Elec_x = 0d0
+  Elec_x_old = 0d0
+
+  do ix = nx_l, nx_r
+    xx = xx_cor(ix)
+    tt = -xx/velocity
+
+    call calc_field_strength(Et,tt)
+    Elec_x(ix) = Et
+
+    xx = xx_cor(ix)
+    tt = -xx/velocity-dt
+    call calc_field_strength(Et,tt)
+    Elec_x_old(ix) = Et
+    
+
+  end do
+  
+
+contains
+  subroutine calc_field_strength(Et,tt)
+    implicit none
+    real(8) :: tt, Et
+    integer :: it
+    real(8) :: r1,r2
+
+    if(tt<minval(tt_exp) .or. tt>= maxval(tt_exp))then
+      Et = 0d0
+      return
+    end if
+
+    
+    do it = 1, nt_exp
+      if(tt < tt_exp(it))then
+        r1 = (tt - tt_exp(it-1))/(tt_exp(it) - tt_exp(it-1))
+        r2 = 1d0 - r1
+        Et = r2 *E_exp(it) + r1*E_exp(it-1)
+        return
+      end if
+    end do
+  end subroutine calc_field_strength
+
+end subroutine set_initial_laser_exp
+!------------------------------------------------------------------------
 subroutine time_propergation
   use global_variables
   implicit none
   integer :: it
+  real(8) :: tshift
 
+  tshift = matter_thickness/(clight/sqrt(eps0))
 
-  call set_initial_laser
+!  call set_initial_laser
+  call set_initial_laser_exp
 
   open(101,file="Et_vac.out")
-  write(101,"(A)")"# t (a.u.), E_front(t), E_rear(t), current_ave, Efield_ave, dEdt_ave"
+  write(101,"(A)")"# t (a.u.), t-shifted (a.u.), E_front(t), E_rear(t), current_ave, Efield_ave, dEdt_ave"
 
   do it = 0, nt
     call calc_average_in_film
-    write(101,"(999e26.16e3)")it*dt, Elec_x(0), Elec_x(mx+1), &
+    write(101,"(999e26.16e3)")it*dt,it*dt-tshift, Elec_x(0), Elec_x(mx+1), &
         current_ave, Efield_ave, dEdt_ave
     call dt_propagation
 
@@ -427,5 +492,39 @@ subroutine check_dielectric_function
 
 end subroutine check_dielectric_function
 !------------------------------------------------------------------------
+subroutine read_exp_data
+  use global_variables
+  implicit none
+  real(8),parameter :: fact_common = 1d35
+  real(8) :: t0
+  integer :: it
+
+  tt_exp = 0d0
+  open(20,file="time_axis.txt")
+  read(20,*)tt_exp(1:nt_exp)
+  close(20)
+
+  open(20,file="with_np.txt")
+  do it = 1, nt_exp
+    read(20,*)E_exp_in(1:5,it)
+  end do
+  close(20)
+
+  do it = 1, nt_exp
+    E_exp(it) = fact_common*sum(E_exp_in(1:5,it))/5d0
+  end do
+
+  t0 = minval(tt_exp)
+  tt_exp = tt_exp - t0
+  tt_exp = tt_exp/fs
+  
+
+  open(30,file="efields.out")
+  do it = 1, nt_exp
+    write(30, "(999e26.16e3)")tt_exp(it)*fs, E_exp(it)
+  end do
+  close(30)
+
+end subroutine read_exp_data
 !------------------------------------------------------------------------
 !------------------------------------------------------------------------
