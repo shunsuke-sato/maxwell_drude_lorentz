@@ -27,7 +27,7 @@ module global_variables
 
 
 ! base matter
-  real(8) :: eps0
+  real(8) :: eps0, sigma_re
 ! Drude parameters
   real(8) :: mass_drude(num_drude), gamma_drude(num_drude), density_drude(num_drude)
   real(8),allocatable :: vt_drude(:,:),vt_drude_old(:,:),vt_drude_new(:,:)
@@ -39,7 +39,8 @@ module global_variables
   real(8),allocatable :: xt_lorentz_old(:,:),vt_lorentz_old(:,:)
   real(8),allocatable :: xt_lorentz_new(:,:),vt_lorentz_new(:,:)
   
-
+! Averaged value in film
+  real(8) :: current_ave, Efield_ave, dEdt_ave
 
 end module global_variables
 !------------------------------------------------------------------------
@@ -59,16 +60,18 @@ subroutine set_model_parameters
   use global_variables
   implicit none
   integer :: ix
-  real(8) :: omega_p
+  real(8) :: omega_p, factor_vac
 
+  factor_vac = 1d0
 ! time propagation
   Tprop = 40d0/fs
-  dt = 0.1d0
+  dt = 0.05d0
   nt = aint(Tprop/dt)+1
   write(*,*)"nt = ",nt
 
 ! base matter
   eps0 = 1d0
+  sigma_re = 7d-4*factor_vac
 
 ! material parameters
   omega_p = 8.5d0/ev
@@ -79,14 +82,14 @@ subroutine set_model_parameters
 
   mass_lorentz(1) = 1d0
   gamma_lorentz(1) = (0.2d0/ev)
-  density_lorentz(1) = 0.7d-3
+  density_lorentz(1) = 0.7d-3*factor_vac
 !  density_lorentz(1) = 0d0
   kconst_lorentz(1) = (2.2d0/ev)**2
 
 
   mass_lorentz(2) = 1d0
   gamma_lorentz(2) = gamma_lorentz(1)
-  density_lorentz(2) = density_lorentz(1)*0.22d0
+  density_lorentz(2) = density_lorentz(1)*0.28d0*factor_vac
 !  density_lorentz(2) = 0d0
   kconst_lorentz(2) = (2.47d0/ev)**2
 
@@ -148,9 +151,9 @@ subroutine set_initial_laser
   E0 = 1d0
   velocity = clight/sqrt(eps0)
 
-  omega_ev = 1.55d0
-!  pulse_width_fs = 30d0
-  pulse_width_fs = 10d0
+  omega_ev = 2.0d0
+  pulse_width_fs = 20d0
+!  pulse_width_fs = 10d0
 
   omega = omega_ev/ev
   pulse_width = pulse_width_fs/fs
@@ -189,10 +192,12 @@ subroutine time_propergation
   call set_initial_laser
 
   open(101,file="Et_vac.out")
-  write(101,"(A)")"# t (a.u.), E_front(t), E_rear(t)"
+  write(101,"(A)")"# t (a.u.), E_front(t), E_rear(t), current_ave, Efield_ave, dEdt_ave"
 
   do it = 0, nt
-    write(101,"(999e26.16e3)")it*dt, Elec_x(0), Elec_x(mx+1)
+    call calc_average_in_film
+    write(101,"(999e26.16e3)")it*dt, Elec_x(0), Elec_x(mx+1), &
+        current_ave, Efield_ave, dEdt_ave
     call dt_propagation
 
 !    if(mod(it, 200) == 0) call output_field(it)
@@ -289,11 +294,45 @@ subroutine calc_acc
 
 end subroutine calc_acc
 !------------------------------------------------------------------------
+subroutine calc_average_in_film
+  use global_variables
+  implicit none
+  integer :: ix, imodel
+
+
+  current_ave = 0d0
+  Efield_ave = 0d0
+  dEdt_ave = 0d0
+
+
+  do ix = 1, mx
+
+    Efield_ave = Efield_ave + Elec_x(ix)
+    dEdt_ave = dEdt_ave + (Elec_x(ix)- Elec_x_old(ix))/dt
+
+! Drude model
+    do imodel = 1, num_drude
+      current_ave = current_ave + vt_drude(imodel, ix)*density_drude(imodel)
+    end do
+
+! Lorentz model
+    do imodel = 1, num_lorentz
+      current_ave = current_ave + vt_lorentz(imodel, ix)*density_lorentz(imodel)
+    end do
+
+  end do
+
+  current_ave = current_ave*dx
+  Efield_ave = Efield_ave*dx
+  dEdt_ave = dEdt_ave*dx
+
+end subroutine calc_average_in_film
+!------------------------------------------------------------------------
 subroutine dt_maxwell
   use global_variables
   implicit none
   integer :: ix
-  real(8) :: velocity_c
+  real(8) :: velocity_c, factor
 
 ! calc laplacian
   ix = nx_l
@@ -306,12 +345,23 @@ subroutine dt_maxwell
 
   velocity_c = clight/sqrt(eps0)
 
-  Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
+
+  Elec_x_new = Lap_Elec_x &
+      + 2d0*Elec_x/(clight**2*dt**2) &
+      + (2d0*pi*sigma_re/dt-1d0/dt**2)/clight**2*Elec_x_old
+
+  Elec_x_new(1:mx) = Elec_x_new(1:mx) -4d0*pi*acc_dns_x(1:mx)/clight**2 
+
+  factor=(2d0*pi*sigma_re/dt+1d0/dt**2)/clight**2
+  Elec_x_new = Elec_x_new/factor
+
+
+!  Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
 
 
 !  write(*,*)nx_l, nx_r, mx
-  Elec_x_new(1:mx) = Elec_x_new(1:mx) &
-      -4d0*pi*(velocity_c/clight)**2*dt**2*acc_dns_x(1:mx)
+!  Elec_x_new(1:mx) = Elec_x_new(1:mx) &
+!      -4d0*pi*(velocity_c/clight)**2*dt**2*acc_dns_x(1:mx)
   
 
 
