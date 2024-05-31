@@ -48,6 +48,13 @@ module global_variables
   real(8) :: E_exp_in(5,nt_exp)
   real(8) :: E_exp(nt_exp)
 
+! Fourier-filtering (experimental data)
+  integer :: nt_exp_f
+  real(8),allocatable  :: tt_exp_f(:)
+  real(8),allocatable :: E_exp_f(:), E_exp_f_m_dt(:)
+  real(8) :: tshift_exp_f
+
+
 end module global_variables
 !------------------------------------------------------------------------
 program main
@@ -68,7 +75,7 @@ subroutine set_model_parameters
   integer :: ix
   real(8) :: omega_p, factor_vac
 
-  factor_vac = 0d0
+  factor_vac = 1d0
 ! time propagation
   Tprop = 60d0/fs
 !  dt = 0.05d0
@@ -78,7 +85,7 @@ subroutine set_model_parameters
 
 ! base matter
   eps0 = 1d0
-  sigma_re = 7d-4*factor_vac
+  sigma_re = 9.5d-2*factor_vac
 
 ! material parameters
   omega_p = 8.5d0/ev
@@ -89,14 +96,14 @@ subroutine set_model_parameters
 
   mass_lorentz(1) = 1d0
   gamma_lorentz(1) = (0.2d0/ev)
-  density_lorentz(1) = 0.7d-3*factor_vac
+  density_lorentz(1) = 1.42d-3*factor_vac
 !  density_lorentz(1) = 0d0
   kconst_lorentz(1) = (2.2d0/ev)**2
 
 
   mass_lorentz(2) = 1d0
   gamma_lorentz(2) = gamma_lorentz(1)
-  density_lorentz(2) = density_lorentz(1)*0.28d0*factor_vac
+  density_lorentz(2) = density_lorentz(1)*0.20d0*factor_vac
 !  density_lorentz(2) = 0d0
   kconst_lorentz(2) = (2.47d0/ev)**2
 
@@ -160,8 +167,8 @@ subroutine set_initial_laser
   velocity = clight/sqrt(eps0)
 
   omega_ev = 2.0d0
-  pulse_width_fs = 20d0
-!  pulse_width_fs = 10d0
+!  pulse_width_fs = 20d0
+  pulse_width_fs = 10d0
 
   omega = omega_ev/ev
   pulse_width = pulse_width_fs/fs
@@ -212,13 +219,15 @@ subroutine set_initial_laser_exp
     Elec_x(ix) = Et
 
     xx = xx_cor(ix)
-    tt = -xx/velocity-dt
+    tt = -xx/velocity -dt
     call calc_field_strength(Et,tt)
     Elec_x_old(ix) = Et
     
 
   end do
   
+  
+
 
 contains
   subroutine calc_field_strength(Et,tt)
@@ -227,17 +236,17 @@ contains
     integer :: it
     real(8) :: r1,r2
 
-    if(tt<minval(tt_exp) .or. tt>= maxval(tt_exp))then
+    if(tt<minval(tt_exp_f) .or. tt>= maxval(tt_exp_f))then
       Et = 0d0
       return
     end if
 
     
-    do it = 1, nt_exp
-      if(tt < tt_exp(it))then
-        r1 = (tt - tt_exp(it-1))/(tt_exp(it) - tt_exp(it-1))
+    do it = 0, nt_exp_f-1
+      if(tt < tt_exp_f(it))then
+        r1 = (tt - tt_exp_f(it-1))/(tt_exp_f(it) - tt_exp_f(it-1))
         r2 = 1d0 - r1
-        Et = r2 *E_exp(it) + r1*E_exp(it-1)
+        Et = r1 *E_exp_f(it) + r2*E_exp_f(it-1)
         return
       end if
     end do
@@ -253,8 +262,8 @@ subroutine time_propergation
 
   tshift = matter_thickness/(clight/sqrt(eps0))
 
-!  call set_initial_laser
-  call set_initial_laser_exp
+  call set_initial_laser
+!  call set_initial_laser_exp
 
   open(101,file="Et_vac.out")
   write(101,"(A)")"# t (a.u.), t-shifted (a.u.), E_front(t), E_rear(t), current_ave, Efield_ave, dEdt_ave"
@@ -385,6 +394,9 @@ subroutine calc_average_in_film
       current_ave = current_ave + vt_lorentz(imodel, ix)*density_lorentz(imodel)
     end do
 
+! metalic current
+      current_ave = current_ave + sigma_re*Elec_x(ix)
+
   end do
 
   current_ave = current_ave*dx
@@ -411,14 +423,20 @@ subroutine dt_maxwell
   velocity_c = clight/sqrt(eps0)
 
 
-  Elec_x_new = Lap_Elec_x &
-      + 2d0*Elec_x/(clight**2*dt**2) &
-      + (2d0*pi*sigma_re/dt-1d0/dt**2)/clight**2*Elec_x_old
+! vacuum
+  Elec_x_new(nx_l:0) = 2d0*Elec_x(nx_l:0) - Elec_x_old(nx_l:0) &
+                     + clight**2*dt**2*Lap_Elec_x(nx_l:0)
+  Elec_x_new(mx+1:nx_r) = 2d0*Elec_x(mx+1:nx_r) - Elec_x_old(mx+1:nx_r) &
+                     + clight**2*dt**2*Lap_Elec_x(mx+1:nx_r)
 
-  Elec_x_new(1:mx) = Elec_x_new(1:mx) -4d0*pi*acc_dns_x(1:mx)/clight**2 
-
+! matter
   factor=(2d0*pi*sigma_re/dt+1d0/dt**2)/clight**2
-  Elec_x_new = Elec_x_new/factor
+
+  Elec_x_new(1:mx) = Lap_Elec_x(1:mx) -4d0*pi*acc_dns_x(1:mx)/clight**2 &
+      + 2d0*Elec_x(1:mx)/(clight**2*dt**2) &
+      + (2d0*pi*sigma_re/dt-1d0/dt**2)/clight**2*Elec_x_old(1:mx)
+
+  Elec_x_new(1:mx) = Elec_x_new(1:mx)/factor
 
 
 !  Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
@@ -504,7 +522,7 @@ subroutine read_exp_data
   read(20,*)tt_exp(1:nt_exp)
   close(20)
 
-  open(20,file="with_np.txt")
+  open(20,file="no_np.txt")
   do it = 1, nt_exp
     read(20,*)E_exp_in(1:5,it)
   end do
@@ -525,6 +543,86 @@ subroutine read_exp_data
   end do
   close(30)
 
+  call Fourier_filter_exp_data
+
 end subroutine read_exp_data
 !------------------------------------------------------------------------
+subroutine Fourier_filter_exp_data
+  use global_variables
+  implicit none
+  real(8),parameter :: ww_cut = 3d0/ev, sigma_ww = 0.25d0/ev
+  integer :: nt_shift
+  complex(8),allocatable :: zEw(:)
+  complex(8) :: zs
+  integer :: iw, it
+  real(8) :: ww, ss, xx, mask, dt_tmp
+  real(8),allocatable :: Et_org(:)
+
+  tshift_exp_f = 5d0/fs
+  dt_tmp = (tt_exp(2)-tt_exp(1))
+  nt_shift = tshift_exp_f/dt_tmp
+
+
+  
+  nt_exp_f = nt_exp + 2*nt_shift
+  allocate(tt_exp_f(0:nt_exp_f-1))
+  allocate(E_exp_f(0:nt_exp_f-1))
+  allocate(Et_org(0:nt_exp_f-1))
+  allocate(E_exp_f_m_dt(0:nt_exp_f-1))
+
+  E_exp_f = 0d0
+  E_exp_f(nt_shift:nt_shift+nt_exp-1) = E_exp(1:nt_exp)
+
+
+
+  Et_org = E_exp_f
+  do it = 0, nt_exp_f-1
+    tt_exp_f(it) = it*dt_tmp
+  end do
+
+  allocate(zEw(-nt_exp_f/2:nt_exp_f/2))
+
+! Forward Fourier transform
+  do iw = -nt_exp_f/2, nt_exp_f/2
+    zs = 0d0
+    do it = 0, nt_exp_f-1
+      zs = zs + E_exp_f(it)*exp(zi*2d0*pi*dble(iw*it)/nt_exp_f)
+    end do
+    zEw(iw) = zs
+  end do
+
+! Filtering in Fourier space
+    do iw = -nt_exp_f/2, nt_exp_f/2
+      ww = 2d0*pi*dble(iw)/(nt_exp_f*dt_tmp)
+      mask = 1d0/(exp((abs(ww)-ww_cut)/sigma_ww)+1d0)
+      zEw(iw) = zEw(iw)*mask
+    end do
+
+
+! Backward Fourier transform
+    do it = 0, nt_exp_f-1
+      ss = 0d0
+      do iw = -nt_exp_f/2, nt_exp_f/2
+        ss = ss + zEw(iw)*exp(-zi*2d0*pi*dble(iw*it)/nt_exp_f)
+      end do
+      E_exp_f(it) = ss/nt_exp_f
+    end do
+
+! Real-time filter
+    do it = 0, nt_shift
+      xx = dble(it)/nt_shift
+      ss = sin(0.5d0*pi*xx)**2
+      E_exp_f(it) = E_exp_f(it)*ss
+      E_exp_f(nt_exp_f-1-it) = E_exp_f(nt_exp_f-1-it)*ss
+    end do
+
+
+    open(101,file="Et_filtering_exp.out")
+    do it = 0, nt_exp_f-1
+      write(101, "(999e26.16e3)")tt_exp_f(it), E_exp_f(it), Et_org(it)
+    end do
+    close(101)
+
+
+end subroutine Fourier_filter_exp_data
 !------------------------------------------------------------------------
