@@ -314,10 +314,13 @@ subroutine dt_newton
 ! Drude model
   do ix = 1, mx
     do imodel = 1, num_drude
-      acc_t = -gamma_drude(imodel)*vt_drude(imodel, ix) &
-             + Elec_x(ix)/mass_drude(imodel)
 
-      vt_drude_new(imodel, ix) = vt_drude_old(imodel, ix) + 2d0*dt*acc_t
+! acc external
+      acc_t = Elec_x(ix)/mass_drude(imodel)
+
+      vt_drude_new(imodel, ix) = &
+          (vt_drude_old(imodel, ix)*exp(-gamma_drude(imodel)*dt) &
+          + 2d0*dt*acc_t)*exp(-gamma_drude(imodel)*dt)
 
     end do
   end do
@@ -326,11 +329,17 @@ subroutine dt_newton
 ! Lorentz model
   do ix = 1, mx
     do imodel = 1, num_lorentz
-      acc_t = -gamma_lorentz(imodel)*vt_lorentz(imodel, ix) &
-              -(kconst_lorentz(imodel)/mass_lorentz(imodel))*xt_lorentz(imodel, ix) &
+
+! acc external
+      acc_t = -(kconst_lorentz(imodel)/mass_lorentz(imodel))*xt_lorentz(imodel, ix) &
              + Elec_x(ix)/mass_lorentz(imodel)
 
-      vt_lorentz_new(imodel, ix) = vt_lorentz_old(imodel, ix) + 2d0*dt*acc_t
+      vt_lorentz_new(imodel, ix) = &
+          (vt_lorentz_old(imodel, ix)*exp(-gamma_lorentz(imodel)*dt) &
+          + 2d0*dt*acc_t )*exp(-gamma_lorentz(imodel)*dt)
+
+! acc external + friction
+      acc_t = acc_t -gamma_lorentz(imodel)*vt_lorentz(imodel, ix) 
       xt_lorentz_new(imodel, ix) = 2d0*xt_lorentz(imodel, ix) - xt_lorentz_old(imodel, ix) &
                                  + acc_t*dt**2
 
