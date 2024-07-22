@@ -27,7 +27,7 @@ module global_variables
 
 
 ! base matter
-  real(8) :: eps0, sigma_re
+  real(8) :: eps0, sigma_re, eps_D
 ! Drude parameters
   real(8) :: mass_drude(num_drude), gamma_drude(num_drude), density_drude(num_drude)
   real(8),allocatable :: vt_drude(:,:),vt_drude_old(:,:),vt_drude_new(:,:)
@@ -84,7 +84,8 @@ subroutine set_model_parameters
   write(*,*)"nt = ",nt
 
 ! base matter
-  eps0 = 1d0
+  eps0 = 1d0 ! vacuum dielectric constant
+  eps_D = 1d0  ! Matter dielectric constant
   sigma_re = 9.5d-2*factor_vac
 
 ! material parameters
@@ -425,16 +426,16 @@ subroutine dt_maxwell
 
 ! vacuum
   Elec_x_new(nx_l:0) = 2d0*Elec_x(nx_l:0) - Elec_x_old(nx_l:0) &
-                     + clight**2*dt**2*Lap_Elec_x(nx_l:0)
+                     + velocity_c**2*dt**2*Lap_Elec_x(nx_l:0)
   Elec_x_new(mx+1:nx_r) = 2d0*Elec_x(mx+1:nx_r) - Elec_x_old(mx+1:nx_r) &
-                     + clight**2*dt**2*Lap_Elec_x(mx+1:nx_r)
+                     + velocity_c**2*dt**2*Lap_Elec_x(mx+1:nx_r)
 
 ! matter
-  factor=(2d0*pi*sigma_re/dt+1d0/dt**2)/clight**2
+  factor=(eps_D/dt**2+2d0*pi*sigma_re/dt)
 
-  Elec_x_new(1:mx) = Lap_Elec_x(1:mx) -4d0*pi*acc_dns_x(1:mx)/clight**2 &
-      + 2d0*Elec_x(1:mx)/(clight**2*dt**2) &
-      + (2d0*pi*sigma_re/dt-1d0/dt**2)/clight**2*Elec_x_old(1:mx)
+  Elec_x_new(1:mx) = velocity_c**2*Lap_Elec_x(1:mx) -4d0*pi*acc_dns_x(1:mx) &
+      + 2d0*eps_D*Elec_x(1:mx)/(dt**2) &
+      - (eps_D/dt**2-2d0*pi*sigma_re/dt)*Elec_x_old(1:mx)
 
   Elec_x_new(1:mx) = Elec_x_new(1:mx)/factor
 
