@@ -8,12 +8,15 @@ module global_variables
   real(8),parameter :: clight = 137d0
 
 
-  integer,parameter :: num_drude = 1
-  integer,parameter :: num_lorentz = 2
+  integer,parameter :: num_drude_1st = 1
+  integer,parameter :: num_lorentz_1st = 2
+  integer,parameter :: num_drude_2nd = 1
+  integer,parameter :: num_lorentz_2nd = 2
 
 ! spatial grid
   real(8) :: left_boundary, right_boundary, matter_thickness, dx
-  integer :: nx_l, nx_r, mx
+  real(8) :: matter_thickness_1st,matter_thickness_2nd
+  integer :: nx_l, nx_r, mx, mx_1st, mx_2nd
   real(8),allocatable :: xx_cor(:)
 
 ! time grid
@@ -27,17 +30,34 @@ module global_variables
 
 
 ! base matter
-  real(8) :: eps0, sigma_re, eps_D
+  real(8) :: eps0, sigma_re_1st, eps_D_1st, sigma_re_2nd, eps_D_2nd
+
 ! Drude parameters
-  real(8) :: mass_drude(num_drude), gamma_drude(num_drude), density_drude(num_drude)
-  real(8),allocatable :: vt_drude(:,:),vt_drude_old(:,:),vt_drude_new(:,:)
+  real(8) :: mass_drude_1st(num_drude_1st)
+  real(8) :: gamma_drude_1st(num_drude_1st)
+  real(8) :: density_drude_1st(num_drude_1st)
+  real(8),allocatable :: vt_drude_1st(:,:),vt_drude_old_1st(:,:),vt_drude_new_1st(:,:)
+  real(8) :: mass_drude_2nd(num_drude_2nd)
+  real(8) :: gamma_drude_2nd(num_drude_2nd)
+  real(8) :: density_drude_2nd(num_drude_2nd)
+  real(8),allocatable :: vt_drude_2nd(:,:),vt_drude_old_2nd(:,:),vt_drude_new_2nd(:,:)
 
 ! Lorentz parameters
-  real(8) :: mass_lorentz(num_lorentz), gamma_lorentz(num_lorentz), density_lorentz(num_lorentz)
-  real(8) :: kconst_lorentz(num_lorentz)
-  real(8),allocatable :: xt_lorentz(:,:),vt_lorentz(:,:)
-  real(8),allocatable :: xt_lorentz_old(:,:),vt_lorentz_old(:,:)
-  real(8),allocatable :: xt_lorentz_new(:,:),vt_lorentz_new(:,:)
+  real(8) :: mass_lorentz_1st(num_lorentz_1st)
+  real(8) :: gamma_lorentz_1st(num_lorentz_1st)
+  real(8) :: density_lorentz_1st(num_lorentz_1st)
+  real(8) :: kconst_lorentz_1st(num_lorentz_1st)
+  real(8),allocatable :: xt_lorentz_1st(:,:),vt_lorentz_1st(:,:)
+  real(8),allocatable :: xt_lorentz_old_1st(:,:),vt_lorentz_old_1st(:,:)
+  real(8),allocatable :: xt_lorentz_new_1st(:,:),vt_lorentz_new_1st(:,:)
+
+  real(8) :: mass_lorentz_2nd(num_lorentz_2nd)
+  real(8) :: gamma_lorentz_2nd(num_lorentz_2nd)
+  real(8) :: density_lorentz_2nd(num_lorentz_2nd)
+  real(8) :: kconst_lorentz_2nd(num_lorentz_2nd)
+  real(8),allocatable :: xt_lorentz_2nd(:,:),vt_lorentz_2nd(:,:)
+  real(8),allocatable :: xt_lorentz_old_2nd(:,:),vt_lorentz_old_2nd(:,:)
+  real(8),allocatable :: xt_lorentz_new_2nd(:,:),vt_lorentz_new_2nd(:,:)
   
 ! Averaged value in film
   real(8) :: current_ave, Efield_ave, dEdt_ave
@@ -113,13 +133,19 @@ subroutine set_model_parameters
 ! spatial grid
   left_boundary = -20d-6/a_B
   right_boundary = 20d-6/a_B
-  matter_thickness = 20d-9/a_B
+  matter_thickness_1st = 20d-9/a_B
+  matter_thickness_2nd = 20d-9/a_B
+  matter_thickness = matter_thickness_1st + matter_thickness_2nd
 !  dx = 1d-9/a_B
   dx = 5d-10/a_B
 
   mx = aint(matter_thickness/dx)+1
   write(*,*)'mx = ',mx
   dx = matter_thickness/mx
+
+  mx_1st = nint(matter_thickness_1st/dx)
+  mx_2nd = mx - mx_1st
+
 
   nx_l = -aint( abs(left_boundary)/dx ) -1
   nx_r =  aint( abs(right_boundary)/dx ) +1
@@ -140,16 +166,33 @@ subroutine set_model_parameters
   
   allocate(acc_dns_x(mx))
 
-  allocate(vt_drude(num_drude, mx),vt_drude_old(num_drude, mx))
-  allocate(vt_drude_new(num_drude, mx))
-  vt_drude = 0d0; vt_drude_old = 0d0; vt_drude_new = 0d0
-  allocate(xt_lorentz(num_lorentz, mx),xt_lorentz_old(num_lorentz, mx))
-  allocate(xt_lorentz_new(num_lorentz, mx))
-  xt_lorentz = 0d0; xt_lorentz_old = 0d0; xt_lorentz_new = 0d0
-  allocate(vt_lorentz(num_lorentz, mx),vt_lorentz_old(num_lorentz, mx))
-  allocate(vt_lorentz_new(num_lorentz, mx))
-  vt_lorentz = 0d0; vt_lorentz_old = 0d0; vt_lorentz_new = 0d0
+  allocate(vt_drude_1st(num_drude_1st, mx_1st))
+  allocate(vt_drude_old_1st(num_drude_1st, mx_1st))
+  allocate(vt_drude_new_1st(num_drude_1st, mx_1st))
+  vt_drude_1st = 0d0; vt_drude_old_1st = 0d0; vt_drude_new_1st = 0d0
+  allocate(xt_lorentz_1st(num_lorentz_1st, mx_1st))
+  allocate(xt_lorentz_old_1st(num_lorentz_1st, mx_1st))
+  allocate(xt_lorentz_new_1st(num_lorentz_1st, mx_1st))
+  xt_lorentz_1st = 0d0; xt_lorentz_old_1st = 0d0; xt_lorentz_new_1st = 0d0
+  allocate(vt_lorentz_1st(num_lorentz_1st, mx_1st))
+  allocate(vt_lorentz_old_1st(num_lorentz_1st, mx_1st))
+  allocate(vt_lorentz_new_1st(num_lorentz_1st, mx_1st))
+  vt_lorentz_1st = 0d0; vt_lorentz_old_1st = 0d0; vt_lorentz_new_1st = 0d0
 
+
+  allocate(vt_drude_2nd(num_drude_2nd, mx_1st+1:mx))
+  allocate(vt_drude_old_2nd(num_drude_2nd, mx_1st+1:mx))
+  allocate(vt_drude_new_2nd(num_drude_2nd, mx_1st+1:mx))
+  vt_drude_2nd = 0d0; vt_drude_old_2nd = 0d0; vt_drude_new_2nd = 0d0
+  allocate(xt_lorentz_2nd(num_lorentz_2nd, mx_1st+1:mx))
+  allocate(xt_lorentz_old_2nd(num_lorentz_2nd, mx_1st+1:mx))
+  allocate(xt_lorentz_new_2nd(num_lorentz_2nd, mx_1st+1:mx))
+  xt_lorentz_2nd = 0d0; xt_lorentz_old_2nd = 0d0; xt_lorentz_new_2nd = 0d0
+  allocate(vt_lorentz_2nd(num_lorentz_2nd, mx_1st+1:mx))
+  allocate(vt_lorentz_old_2nd(num_lorentz_2nd, mx_1st+1:mx))
+  allocate(vt_lorentz_new_2nd(num_lorentz_2nd, mx_1st+1:mx))
+  vt_lorentz_2nd = 0d0; vt_lorentz_old_2nd = 0d0; vt_lorentz_new_2nd = 0d0
+  
 
 
 
@@ -312,35 +355,67 @@ subroutine dt_newton
   real(8) :: force, acc_t
 
 ! Drude model
-  do ix = 1, mx
-    do imodel = 1, num_drude
+  do ix = 1, mx_1st
+    do imodel = 1, num_drude_1st
 
 ! acc external
-      acc_t = Elec_x(ix)/mass_drude(imodel)
+      acc_t = Elec_x(ix)/mass_drude_1st(imodel)
 
-      vt_drude_new(imodel, ix) = &
-          (vt_drude_old(imodel, ix)*exp(-gamma_drude(imodel)*dt) &
-          + 2d0*dt*acc_t)*exp(-gamma_drude(imodel)*dt)
+      vt_drude_new_1st(imodel, ix) = &
+          (vt_drude_old_1st(imodel, ix)*exp(-gamma_drude_1st(imodel)*dt) &
+          + 2d0*dt*acc_t)*exp(-gamma_drude_1st(imodel)*dt)
+
+    end do
+  end do
+
+  do ix = mx_1st+1, mx
+    do imodel = 1, num_drude_2nd
+
+! acc external
+      acc_t = Elec_x(ix)/mass_drude_2nd(imodel)
+
+      vt_drude_new_2nd(imodel, ix) = &
+          (vt_drude_old_2nd(imodel, ix)*exp(-gamma_drude_2nd(imodel)*dt) &
+          + 2d0*dt*acc_t)*exp(-gamma_drude_2nd(imodel)*dt)
 
     end do
   end do
 
 
 ! Lorentz model
-  do ix = 1, mx
-    do imodel = 1, num_lorentz
+  do ix = 1, mx_1st
+    do imodel = 1, num_lorentz_1st
 
 ! acc external
-      acc_t = -(kconst_lorentz(imodel)/mass_lorentz(imodel))*xt_lorentz(imodel, ix) &
-             + Elec_x(ix)/mass_lorentz(imodel)
+      acc_t = -(kconst_lorentz_1st(imodel)/mass_lorentz_1st(imodel))*xt_lorentz_1st(imodel, ix) &
+             + Elec_x(ix)/mass_lorentz_1st(imodel)
 
-      vt_lorentz_new(imodel, ix) = &
-          (vt_lorentz_old(imodel, ix)*exp(-gamma_lorentz(imodel)*dt) &
-          + 2d0*dt*acc_t )*exp(-gamma_lorentz(imodel)*dt)
+      vt_lorentz_new_1st(imodel, ix) = &
+          (vt_lorentz_old_1st(imodel, ix)*exp(-gamma_lorentz_1st(imodel)*dt) &
+          + 2d0*dt*acc_t )*exp(-gamma_lorentz_1st(imodel)*dt)
 
 ! acc external + friction
-      acc_t = acc_t -gamma_lorentz(imodel)*vt_lorentz(imodel, ix) 
-      xt_lorentz_new(imodel, ix) = 2d0*xt_lorentz(imodel, ix) - xt_lorentz_old(imodel, ix) &
+      acc_t = acc_t -gamma_lorentz_1st(imodel)*vt_lorentz_1st(imodel, ix) 
+      xt_lorentz_new_1st(imodel, ix) = 2d0*xt_lorentz_1st(imodel, ix) - xt_lorentz_old_1st(imodel, ix) &
+                                 + acc_t*dt**2
+
+    end do
+  end do
+
+  do ix = mx_1st+1,mx
+    do imodel = 1, num_lorentz_2nd
+
+! acc external
+      acc_t = -(kconst_lorentz_2nd(imodel)/mass_lorentz_2nd(imodel))*xt_lorentz_2nd(imodel, ix) &
+             + Elec_x(ix)/mass_lorentz_2nd(imodel)
+
+      vt_lorentz_new_2nd(imodel, ix) = &
+          (vt_lorentz_old_2nd(imodel, ix)*exp(-gamma_lorentz_2nd(imodel)*dt) &
+          + 2d0*dt*acc_t )*exp(-gamma_lorentz_2nd(imodel)*dt)
+
+! acc external + friction
+      acc_t = acc_t -gamma_lorentz_2nd(imodel)*vt_lorentz_2nd(imodel, ix) 
+      xt_lorentz_new_2nd(imodel, ix) = 2d0*xt_lorentz_2nd(imodel, ix) - xt_lorentz_old_2nd(imodel, ix) &
                                  + acc_t*dt**2
 
     end do
@@ -359,18 +434,35 @@ subroutine calc_acc
 
   acc_dns_x = 0d0
 
-  do ix = 1, mx
+  do ix = 1, mx_1st
 
 ! Drude model
-    do imodel = 1, num_drude
-      acc_t = 0.5d0*(vt_drude_new(imodel,ix)-vt_drude_old(imodel,ix))/dt
-      acc_dns_x(ix) = acc_dns_x(ix) + density_drude(imodel)*acc_t
+    do imodel = 1, num_drude_1st
+      acc_t = 0.5d0*(vt_drude_new_1st(imodel,ix)-vt_drude_old_1st(imodel,ix))/dt
+      acc_dns_x(ix) = acc_dns_x(ix) + density_drude_1st(imodel)*acc_t
     end do
 
 ! Lorentz model
-    do imodel = 1, num_lorentz
-      acc_t = 0.5d0*(vt_lorentz_new(imodel,ix)-vt_lorentz_old(imodel,ix))/dt
-      acc_dns_x(ix) = acc_dns_x(ix) + density_lorentz(imodel)*acc_t
+    do imodel = 1, num_lorentz_1st
+      acc_t = 0.5d0*(vt_lorentz_new_1st(imodel,ix)-vt_lorentz_old_1st(imodel,ix))/dt
+      acc_dns_x(ix) = acc_dns_x(ix) + density_lorentz_1st(imodel)*acc_t
+    end do
+
+  end do
+
+
+  do ix = mx_1st+1, mx
+
+! Drude model
+    do imodel = 1, num_drude_2nd
+      acc_t = 0.5d0*(vt_drude_new_2nd(imodel,ix)-vt_drude_old_2nd(imodel,ix))/dt
+      acc_dns_x(ix) = acc_dns_x(ix) + density_drude_2nd(imodel)*acc_t
+    end do
+
+! Lorentz model
+    do imodel = 1, num_lorentz_2nd
+      acc_t = 0.5d0*(vt_lorentz_new_2nd(imodel,ix)-vt_lorentz_old_2nd(imodel,ix))/dt
+      acc_dns_x(ix) = acc_dns_x(ix) + density_lorentz_2nd(imodel)*acc_t
     end do
 
   end do
@@ -389,23 +481,46 @@ subroutine calc_average_in_film
   dEdt_ave = 0d0
 
 
-  do ix = 1, mx
+  do ix = 1, mx_1st
 
     Efield_ave = Efield_ave + Elec_x(ix)
     dEdt_ave = dEdt_ave + (Elec_x(ix)- Elec_x_old(ix))/dt
 
 ! Drude model
-    do imodel = 1, num_drude
-      current_ave = current_ave + vt_drude(imodel, ix)*density_drude(imodel)
+    do imodel = 1, num_drude_1st
+      current_ave = current_ave + vt_drude_1st(imodel, ix)*density_drude_1st(imodel)
     end do
 
 ! Lorentz model
-    do imodel = 1, num_lorentz
-      current_ave = current_ave + vt_lorentz(imodel, ix)*density_lorentz(imodel)
+    do imodel = 1, num_lorentz_1st
+      current_ave = current_ave + vt_lorentz_1st(imodel, ix)*density_lorentz_1st(imodel)
     end do
 
 ! metalic current
-      current_ave = current_ave + sigma_re*Elec_x(ix)
+      current_ave = current_ave + sigma_re_1st*Elec_x(ix) &
+          +eps_D_1st*(Elec_x(ix)- Elec_x_old(ix))/dt
+
+  end do
+
+
+  do ix = mx_1st+1,mx
+
+    Efield_ave = Efield_ave + Elec_x(ix)
+    dEdt_ave = dEdt_ave + (Elec_x(ix)- Elec_x_old(ix))/dt
+
+! Drude model
+    do imodel = 1, num_drude_2nd
+      current_ave = current_ave + vt_drude_2nd(imodel, ix)*density_drude_2nd(imodel)
+    end do
+
+! Lorentz model
+    do imodel = 1, num_lorentz_2nd
+      current_ave = current_ave + vt_lorentz_2nd(imodel, ix)*density_lorentz_2nd(imodel)
+    end do
+
+! metalic current
+      current_ave = current_ave + sigma_re_2nd*Elec_x(ix) &
+          +eps_D_2nd*(Elec_x(ix)- Elec_x_old(ix))/dt
 
   end do
 
@@ -439,14 +554,24 @@ subroutine dt_maxwell
   Elec_x_new(mx+1:nx_r) = 2d0*Elec_x(mx+1:nx_r) - Elec_x_old(mx+1:nx_r) &
                      + velocity_c**2*dt**2*Lap_Elec_x(mx+1:nx_r)
 
-! matter
-  factor=(eps_D/dt**2+2d0*pi*sigma_re/dt)
+! matter (1st)
+  factor=(eps_D_1st/dt**2+2d0*pi*sigma_re_1st/dt)
 
-  Elec_x_new(1:mx) = velocity_c**2*Lap_Elec_x(1:mx) -4d0*pi*acc_dns_x(1:mx) &
-      + 2d0*eps_D*Elec_x(1:mx)/(dt**2) &
-      - (eps_D/dt**2-2d0*pi*sigma_re/dt)*Elec_x_old(1:mx)
+  Elec_x_new(1:mx_1st) = velocity_c**2*Lap_Elec_x(1:mx_1st) -4d0*pi*acc_dns_x(1:mx_1st) &
+      + 2d0*eps_D_1st*Elec_x(1:mx_1st)/(dt**2) &
+      - (eps_D_1st/dt**2-2d0*pi*sigma_re_1st/dt)*Elec_x_old(1:mx_1st)
 
-  Elec_x_new(1:mx) = Elec_x_new(1:mx)/factor
+  Elec_x_new(1:mx_1st) = Elec_x_new(1:mx_1st)/factor
+
+
+! matter (2nd)
+  factor=(eps_D_2nd/dt**2+2d0*pi*sigma_re_2nd/dt)
+
+  Elec_x_new(mx_1st+1:mx) = velocity_c**2*Lap_Elec_x(mx_1st+1:mx) -4d0*pi*acc_dns_x(mx_1st+1:mx) &
+      + 2d0*eps_D_2nd*Elec_x(mx_1st+1:mx)/(dt**2) &
+      - (eps_D_2nd/dt**2-2d0*pi*sigma_re_2nd/dt)*Elec_x_old(mx_1st+1:mx)
+
+  Elec_x_new(mx_1st+1:mx) = Elec_x_new(mx_1st+1:mx)/factor
 
 
 !  Elec_x_new = 2d0*Elec_x -Elec_x_old +velocity_c**2*dt**2*Lap_Elec_x
@@ -492,24 +617,24 @@ subroutine check_dielectric_function
   complex(8) :: zeps
 
 
-  open(30,file="epsilon.out")
+  open(30,file="epsilon_1st.out")
   do iw = 0, nw
     ww = wi + dw*iw
 
-    zeps = eps0
+    zeps = eps_D_1st
 
 ! Drude
-    do imodel = 1, num_drude
+    do imodel = 1, num_drude_1st
       zeps = zeps + (4d0*pi*zi/ww) &
-                  * (density_drude(imodel)/mass_drude(imodel)) &
-                  * 1d0/(gamma_drude(imodel)-zi*ww)
+                  * (density_drude_1st(imodel)/mass_drude_1st(imodel)) &
+                  * 1d0/(gamma_drude_1st(imodel)-zi*ww)
     end do
 
 ! Lorentz
-    do imodel = 1, num_lorentz
-      w0 = sqrt(kconst_lorentz(imodel)/mass_lorentz(imodel))
-      zeps = zeps + (4d0*pi*density_lorentz(imodel)/mass_lorentz(imodel)) &
-                  * 1d0/(w0**2-ww**2-zi*gamma_lorentz(imodel)*ww)
+    do imodel = 1, num_lorentz_1st
+      w0 = sqrt(kconst_lorentz_1st(imodel)/mass_lorentz_1st(imodel))
+      zeps = zeps + (4d0*pi*density_lorentz_1st(imodel)/mass_lorentz_1st(imodel)) &
+                  * 1d0/(w0**2-ww**2-zi*gamma_lorentz_1st(imodel)*ww)
     end do
 
     write(30,"(99e26.16e3)")ww, zeps
